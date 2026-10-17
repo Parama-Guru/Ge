@@ -1,0 +1,38 @@
+{
+  "name": "ganesh-electricals",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ganesh Electricals website with a preserved original-content archive.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3000",
+    "build": "next build && node tools/finalize-export.mjs",
+    "start": "node tools/serve-static.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:site": "node tools/test-website.mjs",
+    "test:export": "node tools/test-export.mjs",
+    "optimize:media": "node tools/optimize-media.mjs",
+    "render:poster": "node tools/render-poster.mjs"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.2.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@react-three/fiber": "^9.0.0",
+    "@react-three/postprocessing": "^3.0.0",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
+    "sharp": "^0.35.5",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.180.0",
+    "playwright": "^1.56.1",
+    "typescript": "^5.9.3"
+  }
+}
