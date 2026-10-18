@@ -67,28 +67,23 @@ metadata and sitemap.
 
 ## Push and deploy
 
-Remote: https://github.com/Parama-Guru/Ge.git
+Remote: https://Parama-Guru@github.com/Parama-Guru/Ge.git
+
+Pushes reuse the `Parama-Guru` login saved in Git Credential Manager; no
+prompt or token is needed:
 
 ```powershell
-git push -u origin main
+$env:GCM_INTERACTIVE = 'never'
+git push origin main
+.\tools\deploy-status.ps1 -MaxWaitSec 300
 ```
 
-Then:
+Every push to `main` builds, tests and deploys the site through GitHub Actions.
+`deploy-status.ps1` waits for the run for the current commit and fails if it
+does not succeed. See [docs/3d-website-plan.md](docs/3d-website-plan.md) for the
+one-time setup and the 3D website checklist.
 
-1. Open the repository's **Settings → Pages**.
-2. Set **Build and deployment → Source** to **GitHub Actions**.
-3. In **Actions**, run or rerun **Deploy website to GitHub Pages**.
-   The first push can start a run before Pages is enabled; rerun it after
-   setting the source if that happens.
-
-The workflow builds and deploys automatically on subsequent pushes to `main`.
-No personal access token needs to be committed or added to the application.
-
-Expected published address after successful deployment:
-**https://parama-guru.github.io/Ge/**
-
-The code is prepared for this address; local validation does not mean a remote
-deployment has happened. The first push and repository setting are owner actions.
+Published address: **https://parama-guru.github.io/Ge/**
 
 ## Page and content continuity
 
