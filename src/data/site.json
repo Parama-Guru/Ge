@@ -1119,13 +1119,6 @@
       "width": 814,
       "height": 297,
       "label": "Leadership portrait / founder"
-    },
-    {
-      "name": "slide1",
-      "file": "/media/slide1.webp",
-      "width": 1180,
-      "height": 885,
-      "label": "Additional image referenced by legacy CSS"
     }
   ]
 }

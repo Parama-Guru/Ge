@@ -120,7 +120,7 @@ export function CinemaShell({ children }: { children: ReactNode }) {
         onClick={() => { setMenuOpen(true); dialog.current?.showModal(); }}>Menu<span><i /><i /></span></button>
     </header>
     {error && <p className="world-status" role="status">{error}</p>}
-    <noscript><style>{".world-stage,.index-trigger,.project-filters,.enquiry-form{display:none!important}.cinema-header{position:relative!important}.reading-main{padding-top:20px!important}"}</style>
+    <noscript><style>{".world-stage,.index-trigger,.enquiry-form{display:none!important}.cinema-header{position:relative!important}.reading-main{padding-top:20px!important}"}</style>
       <nav className="noscript-links" aria-label="All website pages">{navigation.map(([href, label]) => <Link href={href} key={href}>{label}</Link>)}</nav>
     </noscript>
     <main id="main" className="reading-main">{children}</main>

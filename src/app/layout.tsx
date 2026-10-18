@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "@fontsource-variable/manrope";
 import "@fontsource/barlow-condensed/latin-400.css";
-import "@fontsource/barlow-condensed/latin-600.css";
 import "./globals.css";
 import { CinemaShell } from "@/components/cinema-shell";
 import { absoluteUrl, assetPath, siteUrl } from "@/lib/urls";

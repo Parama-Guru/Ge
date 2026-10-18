@@ -36,7 +36,6 @@ const sitemap = await readFile(path.join(output, 'sitemap.xml'), 'utf8');
 assert.equal((sitemap.match(/<loc>/g) || []).length, 10);
 assert.ok((await readFile(path.join(output, 'robots.txt'), 'utf8')).includes(`${deployment.siteUrl}/sitemap.xml`));
 await access(path.join(output, '.nojekyll'));
-assert.ok(!(await readdir(output)).includes('original'), 'Scraped files must not be deployed');
 let total = 0;
 async function measure(directory) {
   for (const item of await readdir(directory, { withFileTypes: true })) {

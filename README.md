@@ -63,7 +63,7 @@ Chromium before deployment.
 
 The static export check runs in GitHub Actions without a browser and checks
 all original HTML files, local assets/links, canonical URLs, unique titles,
-metadata, sitemap and exclusion of raw archives.
+metadata and sitemap.
 
 ## Push and deploy
 
@@ -135,9 +135,8 @@ substitute for post-deployment Core Web Vitals measurements.
 ## Repository scope and remaining business setup
 
 `src/data/site.json` and required `public/media/` images are committed so a fresh
-clone builds independently. Raw scrape archives, old plans, screenshots,
-validation reports, dependencies and build output are ignored. Raw archives
-are also removed from the deployable output.
+clone builds independently. Dependencies, build output and local test reports
+(`quality/`) are ignored.
 
 Review dated/conflicting source statistics, testimonials, personnel and image
 permissions before public business use. The three missing brochure PDFs still
