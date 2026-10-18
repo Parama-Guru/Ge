@@ -88,7 +88,7 @@ and homepage anchors keep working.
 - [x] Keep `#about`, `#why-us`, `#clients`, `#contact` on the homepage,
       each linking to its dedicated page.
 - [x] Custom 404 page with links back to every endpoint.
-- [ ] Every endpoint returns HTTP 200 on GitHub Pages under `/Ge/`.
+- [x] Every endpoint returns HTTP 200 on GitHub Pages under `/Ge/`.
 
 ## Phase 3b – Efficient loading
 
@@ -139,9 +139,9 @@ and homepage anchors keep working.
 
 ## Phase 6 – Release
 
-- [ ] Commit with a short message only (no co-author lines).
-- [ ] Push and confirm the deploy run succeeds.
-- [ ] Re-check the live site: https://parama-guru.github.io/Ge/
+- [x] Commit with a short message only (no co-author lines).
+- [x] Push and confirm the deploy run succeeds.
+- [x] Re-check the live site: https://parama-guru.github.io/Ge/
 
 ## Findings to fix
 
