@@ -16,34 +16,43 @@ export function PageMotion({ disabled }: { disabled: boolean }) {
       const match = gsap.matchMedia();
       match.add("(prefers-reduced-motion: no-preference)", () => {
         document.documentElement.dataset.motion = "enabled";
-        gsap.from(".brand-mark", { opacity: 0, y: -6, duration: .7, clearProps: "all" });
-        if (document.querySelector(".hero-title")) gsap.from(".hero-title > span", { opacity: 0, y: 28, stagger: .12, duration: 1, ease: "power3.out", clearProps: "all" });
+        const distance = innerWidth < 800 ? 18 : 35;
+        if (document.querySelector(".hero-title")) {
+          gsap.from(".hero-title > span", { opacity: 0, y: 28, stagger: .12, duration: 1, ease: "power3.out", clearProps: "all" });
+        }
         for (const element of document.querySelectorAll<HTMLElement>("[data-reveal]")) {
-          const distance = innerWidth < 800 ? 18 : 35;
           gsap.from(element, {
-            y: distance, opacity: 0, duration: .85, ease: "power2.out",
-            clearProps: "all",
+            y: distance, opacity: 0, duration: .85, ease: "power2.out", clearProps: "all",
             scrollTrigger: { trigger: element, start: "top 94%", once: true },
           });
         }
         for (const group of document.querySelectorAll<HTMLElement>("[data-stagger]")) {
           gsap.from(group.children, {
-            y: 22, opacity: 0, stagger: .075, duration: .65, ease: "power2.out",
-            clearProps: "all",
+            y: 22, opacity: 0, stagger: .075, duration: .65, ease: "power2.out", clearProps: "all",
             scrollTrigger: { trigger: group, start: "top 94%", once: true },
           });
         }
         for (const line of document.querySelectorAll<HTMLElement>("[data-draw]")) {
           gsap.from(line, {
-            scaleX: 0, transformOrigin: "left", ease: "none",
-            scrollTrigger: { trigger: line, start: "top 88%", end: "top 38%", scrub: .6 },
+            scaleX: 0, transformOrigin: "left", duration: 1.4, ease: "power2.inOut", clearProps: "transform",
+            scrollTrigger: { trigger: line, start: "top 90%", once: true },
           });
         }
-        if (innerWidth >= 1000 && document.querySelector(".hero-object-caption")) {
-          gsap.to(".hero-object-caption", { y: -22, opacity: .3, ease: "none",
-            scrollTrigger: { trigger: ".company-hero", start: "top top", end: "bottom top", scrub: .6 } });
+        for (const number of document.querySelectorAll<HTMLElement>("[data-count]")) {
+          const finalText = number.textContent ?? "";
+          const target = Number(number.dataset.count);
+          const counter = { value: 0 };
+          gsap.to(counter, {
+            value: target, duration: 1.4, ease: "power2.out",
+            scrollTrigger: { trigger: number, start: "top 92%", once: true },
+            onUpdate: () => { number.textContent = Math.round(counter.value).toLocaleString("en-IN"); },
+            onComplete: () => { number.textContent = finalText; },
+          });
         }
-        return () => { delete document.documentElement.dataset.motion; };
+        return () => {
+          for (const number of document.querySelectorAll<HTMLElement>("[data-count]")) number.textContent = number.dataset.final ?? number.textContent;
+          delete document.documentElement.dataset.motion;
+        };
       });
       cleanup = () => match.revert();
       requestAnimationFrame(() => { if (!disposed) ScrollTrigger.refresh(); });

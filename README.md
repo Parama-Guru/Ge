@@ -8,18 +8,33 @@ Responsive, animated company website with the original company content and page 
 |---|---|
 | Framework | Next.js 16.4 App Router, React 19.3, TypeScript |
 | Hosting | Static HTML export for GitHub Pages |
-| 3D | Three.js 0.186, React Three Fiber 9.8, procedural cable geometry and generated studio lighting |
+| 3D | Three.js 0.186, React Three Fiber 9.8, seven procedural electrical scenes and generated studio lighting |
 | Animation | GSAP 3.15 / ScrollTrigger, CSS transitions, automatic image crossfades |
 | Styling/state | Tailwind CSS 4 utilities, component CSS and React state |
 
 Native scrolling is preserved. GSAP manages progressive reveals, staggered
-content, drawn divider lines and restrained parallax. Tailwind is compiled at
+content, drawn divider lines and count-up statistics. Tailwind is compiled at
 build time; no CSS CDN is used. No second animation or state framework is needed.
 
-The old factory scene and exploration controls have been removed. The hero is
-an original code-generated cable illustration: a layered sheath, three insulated
-cores, individual copper strands and physical materials. It is not an engineering
-specification or a claim about a particular company's product.
+## 3D architecture
+
+- One fixed, transparent WebGL canvas (`src/components/world/`) is shared by
+  every section of every page.
+- Each content section declares a scene with `data-scene` and reserves a
+  `.scene-window`. A scroll director in `site-shell.tsx` finds the section at
+  the centre of the viewport and publishes live placements for every scene.
+- The active object flies into its section's window; the outgoing object scrolls
+  away with its own section and fades, so 3D never sits over another section's
+  text. Glass sections use their scene as a dimmed full-screen backdrop.
+- Scenes (all generated in code): cable, busbar, insulator string, switchgear,
+  circuit breakers, connected network and copper coil. Page-to-scene mapping
+  lives in `src/data/pages.json`.
+- Rendering is on demand: it redraws on scroll, and ambient motion runs at
+  about 30 fps. It stops when the tab is hidden, the menu is open or motion is
+  paused.
+
+The illustrations are original code-generated artwork, not engineering
+specifications or claims about a particular product.
 
 ## Local development
 
@@ -54,16 +69,16 @@ npm run test:site
 ```
 
 The browser tests use a locally installed Microsoft Edge browser. They verify
-original content, all 45 project rows, both organisation hierarchies, navigation,
-responsive widths, accessibility, automatic image rotation, pause/manual
-controls, data-saving behaviour and the real Three.js renderer. Additional checks
-cover offscreen-render pause, scroll-reveal visibility, runtime reduced-motion
-changes and no-JavaScript navigation. GitHub Actions runs the browser suite with
-Chromium before deployment.
+original content on all 14 endpoints, all 45 project rows, both organisation
+hierarchies, navigation, 320–2560 px widths, accessibility, automatic image
+rotation, pause controls, scene switching, 3D draw-call/triangle budgets,
+first-visit transfer size, reduced motion, Data Saver, WebGL failure and
+no-JavaScript navigation. GitHub Actions runs the browser suite with Chromium
+before deployment.
 
-The static export check runs in GitHub Actions without a browser and checks
-all original HTML files, local assets/links, canonical URLs, unique titles,
-metadata and sitemap.
+The static export check runs in GitHub Actions without a browser. It checks
+every endpoint's HTML, local assets and links, canonical URLs, unique titles and
+descriptions, Open Graph/Twitter tags, structured data and the sitemap.
 
 ## Push and deploy
 
@@ -87,14 +102,22 @@ Published address: **https://parama-guru.github.io/Ge/**
 
 ## Page and content continuity
 
-Published URLs:
+Published URLs (one dedicated page per section of the original site):
 
-- `/Ge/` and `/Ge/index.html`
-- `/Ge/founder.html`, `/Ge/team.html`, `/Ge/org.html`
-- `/Ge/project1.html` through `/Ge/project4.html`
-- `/Ge/ehs.html`, `/Ge/downloads.html`
+| Endpoint | Content |
+|---|---|
+| `/Ge/`, `/Ge/index.html` | Overview of every section |
+| `/Ge/about.html` | Company introduction and timeline |
+| `/Ge/features.html` | Why choose us and statistics |
+| `/Ge/clients.html` | Client logos and testimonials |
+| `/Ge/contact.html` | Address, emails, phone and enquiry draft |
+| `/Ge/founder.html` | Leadership |
+| `/Ge/team.html`, `/Ge/org.html` | Both organisation charts |
+| `/Ge/project1.html`–`/Ge/project4.html` | Projects by year |
+| `/Ge/ehs.html` | Quality & Safety |
+| `/Ge/downloads.html` | Downloads |
 
-About, Features, Clients and Contact retain their homepage anchors.
+The homepage anchors `#about`, `#why-us`, `#clients` and `#contact` still work.
 All 45 project rows, original statistics, dates, testimonials and the two
 different organisation charts are preserved. No archive/research links or
 presentation-mode controls appear on the customer-facing site.
@@ -108,19 +131,20 @@ presentation-mode controls appear on the customer-facing site.
   to small screens. Only current/transition images are mounted.
 - Regenerate image variants with `npm run optimize:media` after replacing the
   full-width banner files.
-- After changing the 3D scene, point `SITE_URL` at the running local preview and
-  run `npm run render:poster`, then rebuild. This generates separate desktop and
-  portrait fallbacks from the live canvas with all HTML hidden.
-- Three.js is deferred until after initial content; reduced-motion and
-  Data Saver users get the lightweight poster without downloading the renderer.
-- Merged conductor geometry, procedural studio lighting, limited pixel density,
+- After changing a 3D scene, point `SITE_URL` at the running local preview and
+  run `npm run render:poster`, then rebuild. This renders one transparent WebP
+  poster per scene from the live canvas, used until WebGL is ready and as the
+  fallback.
+- Three.js is deferred until the browser is idle; reduced-motion and
+  Data Saver users get the lightweight posters without downloading the renderer.
+- Procedural geometry, generated studio lighting, limited pixel density,
   local fonts, lazy images, native navigation and no route prefetching reduce
   unnecessary downloads. No external model or HDR files are required.
-- The 3D renderer pauses when the hero leaves view. Reduced-motion and Data
-  Saver users do not load GSAP. Text remains in static HTML, and keyboard focus
-  immediately reveals animated containers.
-- Each page has a distinct title/description, canonical URL and social metadata.
-  Organisation structured data uses published company details only.
+- Reduced-motion and Data Saver users do not load GSAP. Text remains in static
+  HTML, and keyboard focus immediately reveals animated containers.
+- Each page has a distinct title/description, canonical URL, social metadata
+  and breadcrumb structured data. Organisation structured data uses published
+  company details only.
 - Sitemap and robots files are generated. The Pages workflow enables indexing;
   local builds remain noindex unless explicitly configured as above.
 

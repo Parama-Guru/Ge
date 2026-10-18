@@ -1,8 +1,8 @@
-import { CompanyHome } from "@/components/company-pages";
+import { HomePage } from "@/components/company-pages";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata = pageMetadata("index");
 
-export default function HomePage() {
-  return <CompanyHome />;
+export default function Home() {
+  return <HomePage />;
 }

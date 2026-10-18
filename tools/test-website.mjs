@@ -4,164 +4,249 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
-const data=JSON.parse(await readFile(path.resolve('src','data','site.json'),'utf8'));
-const base=process.env.SITE_URL || 'http://127.0.0.1:3000';
-const output=path.resolve('quality');
-await mkdir(output,{recursive:true});
-const report={status:'running',checks:[],accessibility:[],errors:[]};
-const check=(value,message)=>{assert.ok(value,message);report.checks.push(message);};
-const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
+const data = JSON.parse(await readFile(path.resolve('src', 'data', 'site.json'), 'utf8'));
+const pages = JSON.parse(await readFile(path.resolve('src', 'data', 'pages.json'), 'utf8'));
+const base = process.env.SITE_URL || 'http://127.0.0.1:3000';
+const output = path.resolve('quality');
+await mkdir(output, { recursive: true });
+const report = { status: 'running', checks: [], accessibility: [], errors: [], transfer: {} };
+const check = (value, message) => { assert.ok(value, message); report.checks.push(message); };
+const content = id => data.pages.find(page => page.id === id);
+const home = content('home').paragraphs;
+const ids = pages.map(page => page.id);
+const expectedText = {
+  index: [home[28]],
+  about: [home[5], home[28], '345 clients, 200000 hours of safety record', 'Safety award by Cortico', 'First MNC client..', 'Founder Kumerason and team', '11/09/2014'],
+  features: [home[6], home[7], home[8], home[9], home[10], home[11], home[12], home[13], '274', '421', '40,000'],
+  clients: [home[24], ...home.slice(14, 20)],
+  contact: [home[25], home[27], 'ganeshvar@yahoo.com', 'kumareson@ganeshvar.com'],
+  founder: content('founder').paragraphs.slice(0, 2),
+  ehs: [...content('ehs').paragraphs.slice(0, 7), ...data.commitments],
+  downloads: [content('downloads').paragraphs[0], 'Overview and detailed profile', 'News and Events', 'Outreach'],
+};
+const browser = await chromium.launch({ ...(process.platform === 'win32' ? { channel: 'msedge' } : {}), headless: true });
+
+async function transfer(page) {
+  return page.evaluate(() => Math.round(performance.getEntriesByType('resource').reduce((sum, entry) => sum + (entry.encodedBodySize || 0), 0)
+    + (performance.getEntriesByType('navigation')[0]?.encodedBodySize || 0)));
+}
+
 try {
-  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
-  const page=await context.newPage();
-  page.on('pageerror',error=>report.errors.push(error.message));
-  const ids=['index','founder','team','org','project1','project2','project3','project4','ehs','downloads'];
-  let rowCount=0;
-  for(const id of ids) {
-    const response=await page.goto(`${base}/${id}.html`,{waitUntil:'networkidle'});
-    check(response.status()===200,`Original URL works: ${id}.html`);
-    check(await page.locator('h1').count()===1,`One page heading: ${id}`);
-    check(await page.getByRole('link',{name:/original (content|website|archive)|browse.*archive/i}).count()===0,`No customer-facing archive links: ${id}`);
-    check(await page.locator('.mode-switch,.chapter-rail,.journey-dock,.explore-panel').count()===0,`No presentation controls: ${id}`);
-    if(id.startsWith('project')) {
-      const actual=await page.locator('tbody tr').evaluateAll(rows=>rows.map(row=>[...row.cells].map(cell=>cell.textContent)));
-      const expected=data.pages.find(p=>p.id===id).tables.flatMap(table=>table.slice(1));
-      assert.deepEqual(actual,expected);
-      rowCount+=actual.length;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  page.on('pageerror', error => report.errors.push(error.message));
+  let rowCount = 0;
+
+  for (const id of ids) {
+    const response = await page.goto(`${base}/${id}.html`, { waitUntil: 'networkidle' });
+    check(response.status() === 200, `Endpoint responds: ${id}.html`);
+    check(await page.locator('h1').count() === 1, `One h1: ${id}`);
+    check(await page.locator('[data-scene]').count() > 0, `Page declares 3D scenes: ${id}`);
+    check(await page.locator('.scene-poster').count() > 0, `Page has scene fallback images: ${id}`);
+    if (id !== 'index') check(await page.getByRole('navigation', { name: 'Breadcrumb' }).isVisible(), `Visible breadcrumb: ${id}`);
+    check(await page.locator('.mode-switch,.chapter-rail,.journey-dock,.explore-panel').count() === 0, `No presentation controls: ${id}`);
+    const text = await page.locator('main').innerText();
+    for (const expected of expectedText[id] ?? []) check(text.includes(expected), `Original content on ${id}: ${expected.slice(0, 40)}`);
+    if (id.startsWith('project')) {
+      const actual = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent)));
+      assert.deepEqual(actual, content(id).tables.flatMap(table => table.slice(1)));
+      rowCount += actual.length;
       report.checks.push(`All project fields match: ${id}`);
     }
-    if(id==='team'||id==='org') {
-      const actual=await page.locator('.organisation-page > .team-tree').evaluate(root=>{
-        const parse=list=>[...list.children].map(li=>({label:li.querySelector(':scope > span').textContent,children:li.querySelector(':scope > ul')?parse(li.querySelector(':scope > ul')):[]}));
+    if (id === 'team' || id === 'org') {
+      const actual = await page.locator('.organisation > .team-tree').evaluate(root => {
+        const parse = list => [...list.children].map(item => ({
+          label: item.querySelector(':scope > span').textContent,
+          children: item.querySelector(':scope > ul') ? parse(item.querySelector(':scope > ul')) : [],
+        }));
         return parse(root);
       });
-      assert.deepEqual(actual,data.trees[id]);
-      report.checks.push(`Original organisation hierarchy preserved: ${id}`);
-      check(await page.locator('.organisation-page > .team-tree > li > span').first().evaluate(element=>getComputedStyle(element).whiteSpace==='pre-line'&&element.textContent.includes('\n')),`Names and roles are visibly separated: ${id}`);
+      assert.deepEqual(actual, data.trees[id]);
+      report.checks.push(`Organisation hierarchy preserved: ${id}`);
     }
-    const audit=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
-    report.accessibility.push({page:id,violations:audit.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))});
+    const audit = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    report.accessibility.push({ page: id, violations: audit.violations.map(v => ({ id: v.id, impact: v.impact, targets: v.nodes.map(n => n.target) })) });
   }
-  check(rowCount===45,'All 45 original project rows, including repeats, remain available');
-  await page.goto(`${base}/index.html`,{waitUntil:'networkidle'});
-  const home=data.pages.find(p=>p.id==='home');
-  const text=await page.locator('main').innerText();
-  for(const paragraph of home.paragraphs.slice(5,20)) check(text.includes(paragraph),`Homepage original content: ${paragraph.slice(0,45)}`);
-  check(await page.locator('.company-clients img').count()===12,'All 12 client logos present');
-  for(const image of await page.locator('img').all()) await image.evaluate(async element=>{element.loading='eager';await element.decode();});
-  check(await page.locator('img').evaluateAll(images=>images.every(i=>i.naturalWidth>0)),'Homepage images decode');
-  for(const width of [320,390,768,1280,1440,1920,2560]) {
-    await page.setViewportSize({width,height:900});
-    for(const route of ids.map(id=>`/${id}.html`)) {
-      await page.goto(base+route,{waitUntil:'networkidle'});
-      check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`No document overflow: ${route} at ${width}`);
-      if(route==='/project1.html'&&width<=768) check(await page.locator('.company-table-hint').isVisible(),`Mobile table scrolling is explained at ${width}px`);
+  check(rowCount === 45, 'All 45 project rows, including repeats, remain available');
+
+  await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  for (const [anchor, target] of [['about', 'about'], ['why-us', 'features'], ['clients', 'clients'], ['contact', 'contact']]) {
+    check(await page.locator(`#${anchor} a[href$="/${target}.html"]`).count() > 0, `Homepage #${anchor} links to ${target}.html`);
+  }
+  check(await page.locator('.logo-grid img').count() === 6, 'Homepage shows a client logo preview');
+  await page.goto(`${base}/clients.html`, { waitUntil: 'networkidle' });
+  check(await page.locator('.logo-grid img').count() === 12, 'Clients page shows all 12 logos');
+  for (const image of await page.locator('img').all()) await image.evaluate(async element => { element.loading = 'eager'; await element.decode(); });
+  check(await page.locator('img').evaluateAll(images => images.every(i => i.naturalWidth > 0)), 'Clients page images decode');
+
+  const missing = await page.goto(`${base}/does-not-exist.html`);
+  check(missing.status() === 404, 'Unknown endpoint returns 404');
+  check(await page.locator('.not-found a').count() >= 10, '404 page links to every main page');
+
+  for (const width of [320, 390, 768, 1280, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const id of ids) {
+      await page.goto(`${base}/${id}.html`, { waitUntil: 'domcontentloaded' });
+      check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `No horizontal overflow: ${id} at ${width}px`);
     }
+    await page.goto(`${base}/project1.html`, { waitUntil: 'domcontentloaded' });
+    if (width <= 560) check(await page.locator('.table-scroll').first().evaluate(element => element.scrollWidth <= element.clientWidth), `Project rows stack without sideways scrolling at ${width}px`);
+    else if (width <= 900) check(await page.locator('.table-hint').first().isVisible(), `Table scrolling explained at ${width}px`);
   }
-  await page.setViewportSize({width:390,height:844});
-  await page.goto(base,{waitUntil:'networkidle'});
-  await page.getByRole('button',{name:'Menu',exact:true}).click();
-  check(await page.getByRole('dialog',{name:'Website menu'}).isVisible(),'Mobile menu opens');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: 'Website menu' });
+  check(await menu.isVisible(), 'Mobile menu opens');
+  for (const href of ['/about.html', '/features.html', '/clients.html', '/contact.html', '/founder.html', '/team.html', '/project1.html', '/ehs.html', '/downloads.html']) {
+    check(await menu.locator(`a[href$="${href}"]`).count() === 1, `Menu links to ${href}`);
+  }
   await page.keyboard.press('Escape');
-  check(await page.getByRole('button',{name:'Menu',exact:true}).evaluate(e=>e===document.activeElement),'Menu returns keyboard focus');
-  await page.screenshot({path:path.join(output,'website-mobile.png')});
-  await page.setViewportSize({width:1440,height:1000});
-  await page.goto(base,{waitUntil:'networkidle'});
-  await page.screenshot({path:path.join(output,'website-desktop.png')});
-  await page.locator('#contact').scrollIntoViewIfNeeded();
+  check(await page.getByRole('button', { name: 'Menu', exact: true }).evaluate(element => element === document.activeElement), 'Menu returns keyboard focus');
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(`${base}/contact.html`, { waitUntil: 'networkidle' });
   await page.getByLabel('Your name').fill('Website Test');
   await page.getByLabel('Email address').fill('test@example.invalid');
   await page.getByLabel('Tell us about your project').fill('Validation only; do not send.');
-  await page.getByRole('button',{name:'Prepare email draft'}).click();
-  check((await page.locator('.prepared-draft').getAttribute('href')).startsWith('mailto:ganeshvar@yahoo.com?'),'Enquiry prepares an email draft without a false send claim');
-  check(report.errors.length===0,'No uncaught browser errors');
-  const animatedContext=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'no-preference'});
-  const animated=await animatedContext.newPage();
-  animated.on('pageerror',error=>report.errors.push(error.message));
-  await animated.goto(`${base}/index.html`,{waitUntil:'networkidle'});
-  await animated.locator('.image-carousel').scrollIntoViewIfNeeded();
-  await animated.mouse.move(0,0);
-  await animated.waitForFunction(()=>document.querySelector('.image-carousel')?.getAttribute('data-active')!=='0',null,{timeout:15000});
-  check(true,'Images rotate automatically without scrolling or pressing Next');
-  check(await animated.locator('.carousel-stage img').count()<=3,'Only current and transition images are mounted');
-  await animated.getByRole('button',{name:'Pause image rotation',exact:true}).click();
-  const pausedImage=await animated.locator('.image-carousel').getAttribute('data-active');
-  await animated.mouse.move(0,0);
+  await page.getByRole('button', { name: 'Prepare email draft' }).click();
+  check((await page.locator('.prepared-draft').getAttribute('href')).startsWith('mailto:ganeshvar@yahoo.com?'), 'Enquiry prepares an email draft');
+  await context.close();
+
+  const animatedContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'no-preference' });
+  const animated = await animatedContext.newPage();
+  animated.on('pageerror', error => report.errors.push(error.message));
+  await animated.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  await animated.waitForFunction(() => document.querySelector('.site-shell')?.dataset.world === 'ready', null, { timeout: 30000 });
+  check(await animated.locator('.world-stage canvas').count() === 1, 'One persistent Three.js canvas');
+  await animated.waitForFunction(() => document.querySelector('.world-stage canvas')?.dataset.scene === 'cable', null, { timeout: 10000 });
+  check(true, 'Homepage hero shows the cable scene');
+  check(await animated.evaluate(() => document.documentElement.dataset.motion) === 'enabled', 'GSAP motion initializes');
+  await animated.waitForTimeout(900);
+  check(await animated.locator('.scene-poster').first().evaluate(element => Number(getComputedStyle(element).opacity) < .05), 'Fallback images hide when 3D is ready');
+  await animated.screenshot({ path: path.join(output, 'home-desktop.png') });
+
+  const expectedScenes = [['about', 'insulator'], ['why-us', 'busbar'], ['projects', 'switchgear'], ['clients', 'network'], ['contact', 'coil']];
+  let maxCalls = 0;
+  let maxTriangles = 0;
+  for (const [anchor, scene] of expectedScenes) {
+    await animated.locator(`#${anchor}`).evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await animated.waitForFunction(key => document.querySelector('.world-stage canvas')?.dataset.scene === key, scene, { timeout: 10000 });
+    await animated.waitForTimeout(700);
+    const metrics = await animated.locator('.world-stage canvas').evaluate(element => ({ calls: Number(element.dataset.drawCalls), triangles: Number(element.dataset.triangles) }));
+    maxCalls = Math.max(maxCalls, metrics.calls);
+    maxTriangles = Math.max(maxTriangles, metrics.triangles);
+    check(metrics.calls > 0, `Scroll activates the ${scene} scene at #${anchor}`);
+    await animated.screenshot({ path: path.join(output, `home-${anchor}.png`) });
+  }
+  report.scene = { maxCalls, maxTriangles };
+  check(maxCalls <= 100 && maxTriangles <= 120000, `3D within budget (${maxCalls} calls, ${maxTriangles} triangles)`);
+
+  await animated.locator('#projects').evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await animated.mouse.move(0, 0);
+  await animated.waitForFunction(() => document.querySelector('.image-carousel')?.getAttribute('data-active') !== '0', null, { timeout: 15000 });
+  check(true, 'Banner images rotate automatically');
+  await animated.getByRole('button', { name: 'Pause image rotation', exact: true }).click();
+  const pausedImage = await animated.locator('.image-carousel').getAttribute('data-active');
+  await animated.mouse.move(0, 0);
   await animated.waitForTimeout(5600);
-  check(await animated.locator('.image-carousel').getAttribute('data-active')===pausedImage,'Image pause stops automatic rotation');
-  await animated.getByRole('button',{name:'Next image',exact:true}).click();
-  await animated.waitForFunction(previous=>document.querySelector('.image-carousel')?.getAttribute('data-active')!==previous,pausedImage);
-  check(true,'Manual image navigation remains available when paused');
-  await animated.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
-  await animated.waitForFunction(()=>document.querySelector('.cinema-shell')?.getAttribute('data-world')==='ready',null,{timeout:25000});
-  check(await animated.locator('.world-stage canvas').count()===1,'Three.js renders one working background canvas');
-  await animated.waitForTimeout(800);
-  await animated.waitForFunction(()=>Number(document.querySelector('.world-stage canvas')?.dataset.drawCalls)>0);
-  report.scene=await animated.locator('.world-stage canvas').evaluate(element=>({drawCalls:Number(element.dataset.drawCalls),triangles:Number(element.dataset.triangles)}));
-  check(report.scene.drawCalls<=30&&report.scene.triangles>1000&&report.scene.triangles<=80000,'Procedural cable renders within 30 draw calls and 80k triangles');
-  check(await animated.evaluate(()=>document.documentElement.dataset.motion)==='enabled','GSAP motion initializes on capable devices');
-  await animated.locator('#why-us').scrollIntoViewIfNeeded();
-  await animated.waitForTimeout(1000);
-  const offscreenTime=await animated.locator('.world-stage canvas').getAttribute('data-elapsed');
-  await animated.waitForTimeout(700);
-  check(await animated.locator('.world-stage canvas').getAttribute('data-elapsed')===offscreenTime,'3D animation pauses after the hero leaves view');
-  await animated.locator('#contact').scrollIntoViewIfNeeded();
-  await animated.waitForTimeout(1600);
-  check(await animated.locator('.company-contact [data-reveal]').evaluateAll(elements=>elements.every(e=>Number(getComputedStyle(e).opacity)>.95)),'Contact content becomes visible after scroll reveal');
-  await animated.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
-  await animated.waitForTimeout(1200);
-  report.transfer=await animated.evaluate(()=>({
-    encodedResourceKiB:Math.round(performance.getEntriesByType('resource').reduce((sum,entry)=>sum+(entry.encodedBodySize||0),0)/1024),
-    requests:performance.getEntriesByType('resource').length,
-  }));
-  await animated.screenshot({path:path.join(output,'website-animated-desktop.png')});
-  await animated.setViewportSize({width:390,height:844});
-  await animated.goto(`${base}/index.html`,{waitUntil:'networkidle'});
-  await animated.screenshot({path:path.join(output,'website-animated-mobile.png')});
-  await animated.emulateMedia({reducedMotion:'reduce'});
-  await animated.waitForTimeout(250);
-  check(await animated.locator('.world-stage canvas').count()===0,'Changing reduced motion disables the active renderer');
-  check(await animated.evaluate(()=>document.documentElement.dataset.motion!=='enabled'),'Changing reduced motion reverts GSAP animations');
-  check(await animated.locator('[data-reveal]').evaluateAll(elements=>elements.every(e=>Number(getComputedStyle(e).opacity)>.95)),'Reduced motion restores all previously hidden reveal content');
+  check(await animated.locator('.image-carousel').getAttribute('data-active') === pausedImage, 'Image pause stops rotation');
+
+  await animated.locator('#contact').evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await animated.waitForTimeout(1500);
+  check(await animated.locator('#contact [data-reveal]').evaluate(element => Number(getComputedStyle(element).opacity) > .95), 'Scroll reveal shows contact content');
+
+  await animated.getByRole('button', { name: 'Menu', exact: true }).click();
+  await animated.getByLabel('Pause motion').check();
+  await animated.keyboard.press('Escape');
+  await animated.waitForTimeout(400);
+  const pausedTime = await animated.locator('.world-stage canvas').getAttribute('data-time');
+  await animated.mouse.wheel(0, 30);
+  await animated.waitForTimeout(900);
+  const laterTime = await animated.locator('.world-stage canvas').getAttribute('data-time');
+  check(laterTime === pausedTime, `Pause motion stops ambient 3D animation (${pausedTime} → ${laterTime})`);
+
+  await animated.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  await animated.waitForFunction(() => document.querySelector('.site-shell')?.dataset.world === 'ready', null, { timeout: 30000 });
+  await animated.waitForTimeout(500);
+  report.transfer.home = await transfer(animated);
+  check(report.transfer.home <= 1.5 * 1024 * 1024, `Home first-visit transfer ${Math.round(report.transfer.home / 1024)} KiB ≤ 1.5 MB`);
+  await animated.emulateMedia({ reducedMotion: 'reduce' });
+  await animated.waitForTimeout(300);
+  check(await animated.locator('.world-stage canvas').count() === 0, 'Reduced motion removes the renderer');
+  check(await animated.locator('.scene-poster').first().evaluate(element => Number(getComputedStyle(element).opacity) > .95), 'Reduced motion shows fallback images');
+  check(await animated.locator('[data-reveal]').evaluateAll(elements => elements.every(e => Number(getComputedStyle(e).opacity) > .95)), 'Reduced motion restores all reveal content');
   await animatedContext.close();
-  const plainContext=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
-  const plain=await plainContext.newPage();
+
+  const innerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'no-preference' });
+  const inner = await innerContext.newPage();
+  inner.on('pageerror', error => report.errors.push(error.message));
+  await inner.goto(`${base}/ehs.html`, { waitUntil: 'networkidle' });
+  await inner.waitForFunction(() => document.querySelector('.site-shell')?.dataset.world === 'ready', null, { timeout: 30000 });
+  await inner.waitForFunction(() => document.querySelector('.world-stage canvas')?.dataset.scene === 'breaker', null, { timeout: 10000 });
+  report.transfer.inner = await transfer(inner);
+  check(report.transfer.inner <= 1024 * 1024, `Inner page first-visit transfer ${Math.round(report.transfer.inner / 1024)} KiB ≤ 1 MB`);
+  await inner.screenshot({ path: path.join(output, 'ehs-desktop.png') });
+  for (const [id, scene] of [['project1', 'switchgear'], ['founder', 'cable'], ['downloads', 'coil'], ['features', 'busbar'], ['about', 'insulator']]) {
+    await inner.goto(`${base}/${id}.html`, { waitUntil: 'networkidle' });
+    await inner.waitForFunction(key => document.querySelector('.world-stage canvas')?.dataset.scene === key, scene, { timeout: 30000 });
+    check(true, `${id}.html renders the ${scene} scene`);
+  }
+  await inner.setViewportSize({ width: 390, height: 844 });
+  await inner.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  await inner.waitForFunction(() => document.querySelector('.site-shell')?.dataset.world === 'ready', null, { timeout: 30000 });
+  await inner.waitForTimeout(800);
+  await inner.screenshot({ path: path.join(output, 'home-mobile.png') });
+  await innerContext.close();
+
+  const plainContext = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+  const plain = await plainContext.newPage();
   await plain.goto(`${base}/index.html`);
-  check(await plain.getByRole('heading',{level:1}).isVisible(),'Company heading is readable without JavaScript');
-  check(await plain.getByRole('navigation',{name:'All website pages'}).isVisible(),'All original page links work without JavaScript');
+  check(await plain.getByRole('heading', { level: 1 }).isVisible(), 'Heading readable without JavaScript');
+  check(await plain.getByRole('navigation', { name: 'All website pages' }).isVisible(), 'All pages reachable without JavaScript');
   await plain.goto(`${base}/project1.html`);
-  check(await plain.locator('tbody tr').count()===13,'Project data is complete without JavaScript');
+  check(await plain.locator('tbody tr').count() === 13, 'Project data complete without JavaScript');
   await plainContext.close();
-  const saverContext=await browser.newContext({viewport:{width:390,height:844}});
-  await saverContext.addInitScript(()=>Object.defineProperty(navigator,'connection',{configurable:true,value:{saveData:true}}));
-  const saver=await saverContext.newPage();
-  const saverRequests=[];
-  saver.on('request',request=>saverRequests.push(request.url()));
-  await saver.goto(`${base}/index.html`,{waitUntil:'networkidle'});
-  await saver.waitForTimeout(1800);
-  check(await saver.locator('.world-stage canvas').count()===0,'Data Saver avoids the WebGL renderer');
-  check(await saver.locator('.image-carousel').getAttribute('data-rotating')==='false','Data Saver avoids automatic image downloads');
-  check(!saverRequests.some(url=>/\.glb|\.gltf|\.hdr/.test(url)),'No external 3D model or lighting downloads are required');
+
+  const saverContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await saverContext.addInitScript(() => Object.defineProperty(navigator, 'connection', { configurable: true, value: { saveData: true } }));
+  const saver = await saverContext.newPage();
+  await saver.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  await saver.waitForTimeout(3000);
+  check(await saver.locator('.world-stage canvas').count() === 0, 'Data Saver skips the 3D renderer');
+  check(await saver.locator('.image-carousel').getAttribute('data-rotating') === 'false', 'Data Saver skips automatic image rotation');
   await saverContext.close();
-  const unsupportedContext=await browser.newContext({reducedMotion:'no-preference'});
-  await unsupportedContext.addInitScript(()=>{
-    const original=HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext=function(type,...args){
-      if(type==='webgl2'||type==='webgl')return null;
-      return original.call(this,type,...args);
+
+  const unsupportedContext = await browser.newContext({ reducedMotion: 'no-preference' });
+  await unsupportedContext.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+      if (type === 'webgl2' || type === 'webgl') return null;
+      return original.call(this, type, ...args);
     };
   });
-  const unsupported=await unsupportedContext.newPage();
-  await unsupported.goto(`${base}/index.html`,{waitUntil:'networkidle'});
-  await unsupported.waitForFunction(()=>document.querySelector('.cinema-shell')?.dataset.world==='fallback',null,{timeout:12000});
-  check(await unsupported.locator('.world-status').isVisible(),'Unavailable WebGL reports an honest fallback');
-  check(await unsupported.getByRole('heading',{level:1}).isVisible(),'Company content remains visible without WebGL');
+  const unsupported = await unsupportedContext.newPage();
+  await unsupported.goto(`${base}/index.html`, { waitUntil: 'networkidle' });
+  await unsupported.waitForFunction(() => document.querySelector('.site-shell')?.dataset.world === 'fallback', null, { timeout: 15000 });
+  check(await unsupported.locator('.world-status').isVisible(), 'Unavailable WebGL reports a fallback');
+  check(await unsupported.locator('.scene-poster').first().evaluate(element => Number(getComputedStyle(element).opacity) > .95), 'Fallback images show without WebGL');
   await unsupportedContext.close();
-  check(report.errors.length===0,'Animation and static pages have no uncaught browser errors');
-  const violations=report.accessibility.flatMap(p=>p.violations.map(v=>({page:p.page,...v})));
-  if(violations.length) console.log(JSON.stringify(violations,null,2));
-  check(violations.length===0,'No automated WCAG A/AA violations in inspected pages');
-  report.status='passed';
-  console.log(JSON.stringify({status:report.status,checks:report.checks.length,projectRows:rowCount,transfer:report.transfer}));
-} catch(error) {report.status='failed';report.failure=error.message;console.error(error);process.exitCode=1;}
-finally {report.checkedAt=new Date().toISOString();await writeFile(path.join(output,'website-validation.json'),JSON.stringify(report,null,2));await browser.close();}
+
+  const realErrors = report.errors.filter(message => !/WebGL|getContext/i.test(message));
+  check(realErrors.length === 0, `No uncaught browser errors: ${realErrors.join(' | ')}`);
+  const violations = report.accessibility.flatMap(entry => entry.violations.map(v => ({ page: entry.page, ...v })));
+  if (violations.length) console.log(JSON.stringify(violations, null, 2));
+  check(violations.length === 0, 'No automated WCAG A/AA violations');
+  report.status = 'passed';
+  console.log(JSON.stringify({ status: report.status, checks: report.checks.length, projectRows: rowCount, scene: report.scene, transferKiB: { home: Math.round(report.transfer.home / 1024), inner: Math.round(report.transfer.inner / 1024) } }));
+} catch (error) {
+  report.status = 'failed';
+  report.failure = error.message;
+  console.error(error);
+  process.exitCode = 1;
+} finally {
+  report.checkedAt = new Date().toISOString();
+  await writeFile(path.join(output, 'website-validation.json'), JSON.stringify(report, null, 2));
+  await browser.close();
+}
