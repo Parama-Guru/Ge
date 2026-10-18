@@ -80,7 +80,8 @@ export function ImageCarousel({ slides }: { slides: Slide[] }) {
         alt={index === active ? slides[index].label : ""}
         aria-hidden={index !== active}
         className={index === active ? "carousel-image is-active" : "carousel-image"}
-        fetchPriority={index === 0 ? "high" : "auto"}
+        loading={index === 0 ? "lazy" : "eager"}
+        fetchPriority="auto"
         onLoad={() => {
           if (index === pending) {
             setPrevious(active);

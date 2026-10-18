@@ -15,6 +15,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     env:
       NEXT_PUBLIC_BASE_PATH: /Ge
       NEXT_PUBLIC_SITE_URL: https://parama-guru.github.io/Ge
@@ -28,6 +31,19 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:export
+      - run: npx playwright install --with-deps chromium
+      - name: Verify deployed-path browser experience
+        env:
+          SITE_URL: http://127.0.0.1:3000/Ge
+        run: |
+          npm run start > /tmp/ganesh-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$SITE_URL/" > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

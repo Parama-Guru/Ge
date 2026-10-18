@@ -8,12 +8,18 @@ Responsive, animated company website with the original company content and page 
 |---|---|
 | Framework | Next.js 16.4 App Router, React 19.3, TypeScript |
 | Hosting | Static HTML export for GitHub Pages |
-| 3D | Three.js 0.186, React Three Fiber 9.8, selective post-processing |
-| Animation | Native CSS transitions, automatic image crossfades, Three.js animation |
-| Styling/state | Scoped CSS classes and React state |
+| 3D | Three.js 0.186, React Three Fiber 9.8, procedural cable geometry and generated studio lighting |
+| Animation | GSAP 3.15 / ScrollTrigger, CSS transitions, automatic image crossfades |
+| Styling/state | Tailwind CSS 4 utilities, component CSS and React state |
 
-Extra scroll/state/animation frameworks are deliberately avoided: this site does
-not need three overlapping animation engines or scroll hijacking.
+Native scrolling is preserved. GSAP manages progressive reveals, staggered
+content, drawn divider lines and restrained parallax. Tailwind is compiled at
+build time; no CSS CDN is used. No second animation or state framework is needed.
+
+The old factory scene and exploration controls have been removed. The hero is
+an original code-generated cable illustration: a layered sheath, three insulated
+cores, individual copper strands and physical materials. It is not an engineering
+specification or a claim about a particular company's product.
 
 ## Local development
 
@@ -50,7 +56,10 @@ npm run test:site
 The browser tests use a locally installed Microsoft Edge browser. They verify
 original content, all 45 project rows, both organisation hierarchies, navigation,
 responsive widths, accessibility, automatic image rotation, pause/manual
-controls, data-saving behaviour and the real Three.js renderer.
+controls, data-saving behaviour and the real Three.js renderer. Additional checks
+cover offscreen-render pause, scroll-reveal visibility, runtime reduced-motion
+changes and no-JavaScript navigation. GitHub Actions runs the browser suite with
+Chromium before deployment.
 
 The static export check runs in GitHub Actions without a browser and checks
 all original HTML files, local assets/links, canonical URLs, unique titles,
@@ -105,12 +114,16 @@ presentation-mode controls appear on the customer-facing site.
 - Regenerate image variants with `npm run optimize:media` after replacing the
   full-width banner files.
 - After changing the 3D scene, point `SITE_URL` at the running local preview and
-  run `npm run render:poster`, then rebuild. The poster generator hides all HTML
-  controls before capture so obsolete interface elements cannot be baked in.
+  run `npm run render:poster`, then rebuild. This generates separate desktop and
+  portrait fallbacks from the live canvas with all HTML hidden.
 - Three.js is deferred until after initial content; reduced-motion and
   Data Saver users get the lightweight poster without downloading the renderer.
-- Instanced geometry, limited pixel density, local fonts, lazy images, native
-  navigation and no route prefetching keep avoidable work/downloads down.
+- Merged conductor geometry, procedural studio lighting, limited pixel density,
+  local fonts, lazy images, native navigation and no route prefetching reduce
+  unnecessary downloads. No external model or HDR files are required.
+- The 3D renderer pauses when the hero leaves view. Reduced-motion and Data
+  Saver users do not load GSAP. Text remains in static HTML, and keyboard focus
+  immediately reveals animated containers.
 - Each page has a distinct title/description, canonical URL and social metadata.
   Organisation structured data uses published company details only.
 - Sitemap and robots files are generated. The Pages workflow enables indexing;

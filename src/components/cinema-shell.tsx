@@ -6,8 +6,9 @@ import { Component, useCallback, useEffect, useRef, useState, type ErrorInfo, ty
 import type { WorldMotion } from "@/lib/world";
 import { assetPath, withoutBasePath } from "@/lib/urls";
 import { Arrow, SiteLink as Link } from "./ui";
+import { PageMotion } from "./page-motion";
 
-const IndustrialWorld = dynamic(() => import("./industrial-world").then(module => module.IndustrialWorld), { ssr: false });
+const ElectricalScene = dynamic(() => import("./electrical-scene").then(module => module.ElectricalScene), { ssr: false });
 const navigation = [
   ["/index.html", "Home"], ["/index.html#about", "About"], ["/index.html#why-us", "Features"],
   ["/index.html#clients", "Clients"], ["/founder.html", "Leadership"], ["/team.html", "Org Chart"],
@@ -35,10 +36,12 @@ export function CinemaShell({ children }: { children: ReactNode }) {
   const [hidden, setHidden] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [enabled, setEnabled] = useState(false);
+  const [inView, setInView] = useState(true);
+  const [scrolled, setScrolled] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const motion = useRef<WorldMotion>({
-    paused: false, reduced: false, hidden: false, menuOpen: false,
+    paused: false, reduced: false, hidden: false, menuOpen: false, scroll: 0,
   });
   const markReady = useCallback(() => setReady(true), []);
   const fail = useCallback((message: string) => {
@@ -68,9 +71,19 @@ export function CinemaShell({ children }: { children: ReactNode }) {
     };
   }, []);
   useEffect(() => {
-    Object.assign(motion.current, { paused, reduced, hidden, menuOpen });
+    Object.assign(motion.current, { paused, reduced, hidden: hidden || !inView, menuOpen });
     window.dispatchEvent(new Event("world-control"));
-  }, [paused, reduced, hidden, menuOpen]);
+  }, [paused, reduced, hidden, menuOpen, inView]);
+  useEffect(() => {
+    const scroll = () => {
+      setScrolled(window.scrollY > 30);
+      setInView(window.scrollY < window.innerHeight * 1.25);
+      motion.current.scroll = Math.min(1, window.scrollY / window.innerHeight);
+    };
+    scroll();
+    window.addEventListener("scroll", scroll, { passive: true });
+    return () => window.removeEventListener("scroll", scroll);
+  }, []);
   useEffect(() => {
     if (!enabled || ready || error) return;
     const timer = setTimeout(() => fail("The 3D background could not finish loading. The website content is still available."), 25000);
@@ -84,20 +97,25 @@ export function CinemaShell({ children }: { children: ReactNode }) {
   const close = () => { dialog.current?.close(); setMenuOpen(false); };
 
   return <div className={`cinema-shell ${route === "/" || route === "/index.html" ? "is-site-home" : "is-reading"}`} data-world={error ? "fallback" : !enabled ? "static" : ready ? "ready" : "loading"}>
+    <PageMotion disabled={paused || reduced} />
     <div className="world-stage" aria-hidden="true">
-      <div className="world-poster" style={{backgroundImage:`url("${assetPath("/media/world-poster.webp")}")`}} />
+      <picture className="world-poster">
+        <source media="(max-width: 900px)" srcSet={assetPath("/media/cable-mobile.webp")} />
+        <img src={assetPath("/media/cable-desktop.webp")} alt="" width="1440" height="940" fetchPriority="high" />
+      </picture>
       {enabled && !error && <WorldBoundary onError={fail}>
-        <IndustrialWorld motion={motion} route={route}
-          motionEnabled={!paused && !reduced && !hidden && !menuOpen}
+        <ElectricalScene motion={motion} route={route}
+          motionEnabled={!paused && !reduced && !hidden && !menuOpen && inView}
           onReady={markReady} onError={fail} />
       </WorldBoundary>}
     </div>
     <div className="cinema-shade" aria-hidden="true" />
-    <header className="cinema-header">
-      <Link href="/" className="cinema-brand" aria-label="Ganesh Electricals home"><img src={assetPath("/media/wganesh3.webp")} width="280" height="36" alt="Ganesh Electricals" /></Link>
+    <header className="cinema-header" data-scrolled={scrolled}>
+      <Link href="/" className="cinema-brand brand-mark" aria-label="Ganesh Electricals home"><img src={assetPath("/media/wganesh3.webp")} width="280" height="36" alt="Ganesh Electricals" /></Link>
       <nav className="standard-navigation" aria-label="Main navigation">
-        {[["/index.html#about", "About"], ["/project1.html", "Projects"], ["/ehs.html", "Quality & Safety"], ["/index.html#contact", "Contact"]].map(([href, label]) => <Link href={href} key={href} aria-current={route === href ? "page" : undefined}>{label}</Link>)}
+        {[["/index.html#about", "About"], ["/index.html#why-us","Features"], ["/project1.html", "Projects"], ["/ehs.html", "Quality & Safety"]].map(([href, label]) => <Link href={href} key={href} aria-current={route === href ? "page" : undefined}>{label}</Link>)}
       </nav>
+      <Link className="header-contact" href="/index.html#contact">Contact<Arrow diagonal /></Link>
       <button className="index-trigger" type="button" ref={trigger} aria-haspopup="dialog" aria-expanded={menuOpen}
         onClick={() => { setMenuOpen(true); dialog.current?.showModal(); }}>Menu<span><i /><i /></span></button>
     </header>
@@ -115,7 +133,7 @@ export function CinemaShell({ children }: { children: ReactNode }) {
     <dialog ref={dialog} className="world-index" aria-label="Website menu" onClose={() => { setMenuOpen(false); trigger.current?.focus(); }}>
       <div className="index-header"><img src={assetPath("/media/wganesh3.webp")} width="280" height="36" alt="Ganesh Electricals" /><button type="button" onClick={close} aria-label="Close menu">Close <span>×</span></button></div>
       <nav className="standard-menu" aria-label="All website pages">{navigation.map(([href, label]) => <Link href={href} key={href} onClick={close}>{label}<Arrow diagonal /></Link>)}</nav>
-      <label className="background-preference"><input type="checkbox" checked={paused || reduced} disabled={reduced} onChange={event => setPaused(event.target.checked)} />Pause decorative background motion</label>
+      <label className="background-preference"><input type="checkbox" checked={paused || reduced} disabled={reduced} onChange={event => setPaused(event.target.checked)} />Pause decorative motion</label>
       {!reduced && <label className="background-preference"><input type="checkbox" checked={enabled} onChange={event => {
         setReady(false);
         setError("");

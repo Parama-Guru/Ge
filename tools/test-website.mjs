@@ -10,7 +10,7 @@ const output=path.resolve('quality');
 await mkdir(output,{recursive:true});
 const report={status:'running',checks:[],accessibility:[],errors:[]};
 const check=(value,message)=>{assert.ok(value,message);report.checks.push(message);};
-const browser=await chromium.launch({channel:'msedge',headless:true});
+const browser=await chromium.launch({...(process.platform==='win32'?{channel:'msedge'}:{}),headless:true});
 try {
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
   const page=await context.newPage();
@@ -52,7 +52,7 @@ try {
   check(await page.locator('img').evaluateAll(images=>images.every(i=>i.naturalWidth>0)),'Homepage images decode');
   for(const width of [320,390,768,1280,1440,1920,2560]) {
     await page.setViewportSize({width,height:900});
-    for(const route of ['/index.html','/team.html','/project1.html','/downloads.html']) {
+    for(const route of ids.map(id=>`/${id}.html`)) {
       await page.goto(base+route,{waitUntil:'networkidle'});
       check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`No document overflow: ${route} at ${width}`);
       if(route==='/project1.html'&&width<=768) check(await page.locator('.company-table-hint').isVisible(),`Mobile table scrolling is explained at ${width}px`);
@@ -92,11 +92,24 @@ try {
   await animated.getByRole('button',{name:'Next image',exact:true}).click();
   await animated.waitForFunction(previous=>document.querySelector('.image-carousel')?.getAttribute('data-active')!==previous,pausedImage);
   check(true,'Manual image navigation remains available when paused');
+  await animated.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
   await animated.waitForFunction(()=>document.querySelector('.cinema-shell')?.getAttribute('data-world')==='ready',null,{timeout:25000});
   check(await animated.locator('.world-stage canvas').count()===1,'Three.js renders one working background canvas');
+  await animated.waitForTimeout(800);
   await animated.waitForFunction(()=>Number(document.querySelector('.world-stage canvas')?.dataset.drawCalls)>0);
   report.scene=await animated.locator('.world-stage canvas').evaluate(element=>({drawCalls:Number(element.dataset.drawCalls),triangles:Number(element.dataset.triangles)}));
-  check(report.scene.drawCalls<=220&&report.scene.triangles>1000&&report.scene.triangles<=120000,'Actual 3D geometry renders within the scene budget');
+  check(report.scene.drawCalls<=30&&report.scene.triangles>1000&&report.scene.triangles<=80000,'Procedural cable renders within 30 draw calls and 80k triangles');
+  check(await animated.evaluate(()=>document.documentElement.dataset.motion)==='enabled','GSAP motion initializes on capable devices');
+  await animated.locator('#why-us').scrollIntoViewIfNeeded();
+  await animated.waitForTimeout(1000);
+  const offscreenTime=await animated.locator('.world-stage canvas').getAttribute('data-elapsed');
+  await animated.waitForTimeout(700);
+  check(await animated.locator('.world-stage canvas').getAttribute('data-elapsed')===offscreenTime,'3D animation pauses after the hero leaves view');
+  await animated.locator('#contact').scrollIntoViewIfNeeded();
+  await animated.waitForTimeout(1600);
+  check(await animated.locator('.company-contact [data-reveal]').evaluateAll(elements=>elements.every(e=>Number(getComputedStyle(e).opacity)>.95)),'Contact content becomes visible after scroll reveal');
+  await animated.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+  await animated.waitForTimeout(1200);
   report.transfer=await animated.evaluate(()=>({
     encodedResourceKiB:Math.round(performance.getEntriesByType('resource').reduce((sum,entry)=>sum+(entry.encodedBodySize||0),0)/1024),
     requests:performance.getEntriesByType('resource').length,
@@ -105,15 +118,45 @@ try {
   await animated.setViewportSize({width:390,height:844});
   await animated.goto(`${base}/index.html`,{waitUntil:'networkidle'});
   await animated.screenshot({path:path.join(output,'website-animated-mobile.png')});
+  await animated.emulateMedia({reducedMotion:'reduce'});
+  await animated.waitForTimeout(250);
+  check(await animated.locator('.world-stage canvas').count()===0,'Changing reduced motion disables the active renderer');
+  check(await animated.evaluate(()=>document.documentElement.dataset.motion!=='enabled'),'Changing reduced motion reverts GSAP animations');
+  check(await animated.locator('[data-reveal]').evaluateAll(elements=>elements.every(e=>Number(getComputedStyle(e).opacity)>.95)),'Reduced motion restores all previously hidden reveal content');
   await animatedContext.close();
+  const plainContext=await browser.newContext({javaScriptEnabled:false,viewport:{width:390,height:844}});
+  const plain=await plainContext.newPage();
+  await plain.goto(`${base}/index.html`);
+  check(await plain.getByRole('heading',{level:1}).isVisible(),'Company heading is readable without JavaScript');
+  check(await plain.getByRole('navigation',{name:'All website pages'}).isVisible(),'All original page links work without JavaScript');
+  await plain.goto(`${base}/project1.html`);
+  check(await plain.locator('tbody tr').count()===13,'Project data is complete without JavaScript');
+  await plainContext.close();
   const saverContext=await browser.newContext({viewport:{width:390,height:844}});
   await saverContext.addInitScript(()=>Object.defineProperty(navigator,'connection',{configurable:true,value:{saveData:true}}));
   const saver=await saverContext.newPage();
+  const saverRequests=[];
+  saver.on('request',request=>saverRequests.push(request.url()));
   await saver.goto(`${base}/index.html`,{waitUntil:'networkidle'});
   await saver.waitForTimeout(1800);
   check(await saver.locator('.world-stage canvas').count()===0,'Data Saver avoids the WebGL renderer');
   check(await saver.locator('.image-carousel').getAttribute('data-rotating')==='false','Data Saver avoids automatic image downloads');
+  check(!saverRequests.some(url=>/\.glb|\.gltf|\.hdr/.test(url)),'No external 3D model or lighting downloads are required');
   await saverContext.close();
+  const unsupportedContext=await browser.newContext({reducedMotion:'no-preference'});
+  await unsupportedContext.addInitScript(()=>{
+    const original=HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext=function(type,...args){
+      if(type==='webgl2'||type==='webgl')return null;
+      return original.call(this,type,...args);
+    };
+  });
+  const unsupported=await unsupportedContext.newPage();
+  await unsupported.goto(`${base}/index.html`,{waitUntil:'networkidle'});
+  await unsupported.waitForFunction(()=>document.querySelector('.cinema-shell')?.dataset.world==='fallback',null,{timeout:12000});
+  check(await unsupported.locator('.world-status').isVisible(),'Unavailable WebGL reports an honest fallback');
+  check(await unsupported.getByRole('heading',{level:1}).isVisible(),'Company content remains visible without WebGL');
+  await unsupportedContext.close();
   check(report.errors.length===0,'Animation and static pages have no uncaught browser errors');
   const violations=report.accessibility.flatMap(p=>p.violations.map(v=>({page:p.page,...v})));
   if(violations.length) console.log(JSON.stringify(violations,null,2));
